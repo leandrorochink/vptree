@@ -22,6 +22,8 @@ class VPTree:
         Minimum number of points in leaves (IGNORED).
     """
 
+    tolerance = 1e-8
+
     def __init__(self, points, dist_fn):
         self.left = None
         self.right = None
@@ -49,16 +51,16 @@ class VPTree:
         left_points = []
         right_points = []
         for point, distance in zip(points, distances):
-            if distance >= median:
+            if distance >= (median - VPTree.tolerance):
                 self.right_min = min(distance, self.right_min)
-                if distance > self.right_max:
+                if distance > (self.right_max + VPTree.tolerance):
                     self.right_max = distance
                     right_points.insert(0, point) # put furthest first
                 else:
                     right_points.append(point)
             else:
                 self.left_min = min(distance, self.left_min)
-                if distance > self.left_max:
+                if distance > (self.left_max + VPTree.tolerance):
                     self.left_max = distance
                     left_points.insert(0, point) # put furthest first
                 else:
@@ -112,29 +114,34 @@ class VPTree:
 
         while len(nodes_to_visit) > 0:
             node, d0 = nodes_to_visit.pop(0)
-            if node is None or d0 > furthest_d:
+            if node is None or d0 > (furthest_d + VPTree.tolerance):
                 continue
-
+            
             d = self.dist_fn(query, node.vp)
-            if d < furthest_d:
+            if d < (furthest_d - VPTree.tolerance):
                 neighbors.append((d, node.vp))
-                furthest_d, _ = neighbors[-1]
+                
+                # Update the furtherst distance after having found at least n_neighbors
+                if len(neighbors) >= n_neighbors:
+                    furthest_d, _ = neighbors[-1]
 
             if node._is_leaf():
                 continue
 
-            if node.left_min <= d <= node.left_max:
+            if (node.left_min - VPTree.tolerance) <= d <= (node.left_max + VPTree.tolerance):
                 nodes_to_visit.insert(0, (node.left, 0))
-            elif node.left_min - furthest_d <= d <= node.left_max + furthest_d:
+
+            elif (node.left_min - furthest_d - VPTree.tolerance) <= d <= (node.left_max + furthest_d + VPTree.tolerance):
                 nodes_to_visit.append((node.left,
-                                       node.left_min - d if d < node.left_min
+                                       node.left_min - d if d < (node.left_min - VPTree.tolerance)
                                        else d - node.left_max))
 
-            if node.right_min <= d <= node.right_max:
+            if (node.right_min - VPTree.tolerance) <= d <= (node.right_max + VPTree.tolerance):
                 nodes_to_visit.insert(0, (node.right, 0))
-            elif node.right_min - furthest_d <= d <= node.right_max + furthest_d:
+
+            elif (node.right_min - furthest_d - VPTree.tolerance) <= d <= (node.right_max + furthest_d + VPTree.tolerance):
                 nodes_to_visit.append((node.right,
-                                       node.right_min - d if d < node.right_min
+                                       node.right_min - d if (d < node.right_min - VPTree.tolerance)
                                        else d - node.right_max))
 
         return list(neighbors)
@@ -163,28 +170,30 @@ class VPTree:
 
         while len(nodes_to_visit) > 0:
             node, d0 = nodes_to_visit.pop(0)
-            if node is None or d0 > max_distance:
+            if node is None or d0 > (max_distance + VPTree.tolerance):
                 continue
 
             d = self.dist_fn(query, node.vp)
-            if d < max_distance:
+            if d < (max_distance - VPTree.tolerance):
                 neighbors.append((d, node.vp))
 
             if node._is_leaf():
                 continue
 
-            if node.left_min <= d <= node.left_max:
+            if (node.left_min - VPTree.tolerance) <= d <= (node.left_max + VPTree.tolerance):
                 nodes_to_visit.insert(0, (node.left, 0))
-            elif node.left_min - max_distance <= d <= node.left_max + max_distance:
+
+            elif (node.left_min - max_distance - VPTree.tolerance) <= d <= (node.left_max + max_distance + VPTree.tolerance):
                 nodes_to_visit.append((node.left,
-                                       node.left_min - d if d < node.left_min
+                                       node.left_min - d if (d < node.left_min - VPTree.tolerance)
                                        else d - node.left_max))
 
-            if node.right_min <= d <= node.right_max:
+            if (node.right_min - VPTree.tolerance) <= d <= (node.right_max + VPTree.tolerance):
                 nodes_to_visit.insert(0, (node.right, 0))
-            elif node.right_min - max_distance <= d <= node.right_max + max_distance:
+
+            elif (node.right_min - max_distance - VPTree.tolerance) <= d <= (node.right_max + max_distance + VPTree.tolerance):
                 nodes_to_visit.append((node.right,
-                                       node.right_min - d if d < node.right_min
+                                       node.right_min - d if d < (node.right_min - VPTree.tolerance)
                                        else d - node.right_max))
 
         return neighbors
