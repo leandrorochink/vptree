@@ -1,18 +1,22 @@
+
 import unittest
-import vptree
+
+from numpy.lib.polynomial import polyint
+from vptree import VPTree
 import numpy as np
 
 
 class TestVPTree(unittest.TestCase):
-
+    
     def test_single_nearest_neighbor(self):
         dim = 10
         query = [.5] * dim
         points, brute_force = brute_force_solution(20000, dim, query)
-        tree = vptree.VPTree(points, euclidean)
+        tree = VPTree.construct_tree(points, euclidean)
 
         nearest = tree.get_nearest_neighbor(query)
         bf_nearest = brute_force[0]
+
         self.assertEqual(nearest[0], bf_nearest[0])
         self.assertTrue(all(n == b for n, b in zip(nearest[1], bf_nearest[1])))
 
@@ -20,12 +24,13 @@ class TestVPTree(unittest.TestCase):
         dim = 10
         query = [.5] * dim
         points, brute_force = brute_force_solution(20000, dim, query)
-        tree = vptree.VPTree(points, euclidean)
+        tree = VPTree.construct_tree(points, euclidean)
 
         for k in (1, 10, len(points)):
             tree_nearest = tree.get_n_nearest_neighbors(query, k)
             brute_force_nearest = brute_force[:k]
-            for nearest, bf_nearest in zip(tree_nearest, brute_force_nearest):
+
+            for nearest, bf_nearest in zip(tree_nearest, brute_force_nearest):    
                 self.assertEqual(nearest[0], bf_nearest[0])
                 self.assertTrue(all(n == b for n, b in zip(nearest[1],
                                                            bf_nearest[1])))
@@ -34,23 +39,42 @@ class TestVPTree(unittest.TestCase):
         dim = 10
         query = [.5] * dim
         points, brute_force = brute_force_solution(20000, dim, query)
-        tree = vptree.VPTree(points, euclidean)
+        tree = VPTree.construct_tree(points, euclidean)
 
         for eps in (-1, 0, 1, 2, 10):
             tree_nearest = sorted(tree.get_all_in_range(query, eps))
             brute_force_nearest = [point for point in brute_force if
                                    point[0] < eps]
+
             for nearest, bf_nearest in zip(tree_nearest, brute_force_nearest):
                 self.assertEqual(nearest[0], bf_nearest[0])
                 self.assertTrue(all(n == b for n, b in zip(nearest[1],
                                                            bf_nearest[1])))
 
     def test_empty_points_raises_valueerror(self):
-        self.assertRaises(ValueError, vptree.VPTree, [], euclidean)
+        self.assertRaises(ValueError, VPTree.construct_tree, [], euclidean)
 
     def test_zero_neighbors_raises_valueerror(self):
-        tree = vptree.VPTree([1, 2, 3], euclidean)
+        tree = VPTree.construct_tree(np.array([1.0, 2.0, 3.0]), euclidean)
         self.assertRaises(ValueError, tree.get_n_nearest_neighbors, [1], 0)
+
+    def test_adding_points(self):
+        dim = 10
+        query = [.5] * dim
+        points, brute_force = brute_force_solution(20000, dim, query)
+        tree = VPTree.construct_tree(points[:10000], euclidean)
+
+        for point in points[10000:]:
+            tree.add_point(point)
+
+        for k in (1, 10, len(points)):
+            tree_nearest = tree.get_n_nearest_neighbors(query, k)
+            brute_force_nearest = brute_force[:k]
+
+            for nearest, bf_nearest in zip(tree_nearest, brute_force_nearest):    
+                self.assertEqual(nearest[0], bf_nearest[0])
+                self.assertTrue(all(n == b for n, b in zip(nearest[1],
+                                                           bf_nearest[1])))
 
 
 def euclidean(p1, p2):
@@ -58,7 +82,11 @@ def euclidean(p1, p2):
 
 
 def brute_force_solution(n, dim, query, dist=euclidean):
-    points = np.random.randn(n, dim)
+    random_gen = np.random.default_rng(seed=1)
+    points = 10 * random_gen.standard_normal(size=(n, dim))
+    
+    # points = np.random.randn(n, dim)
+    
     brute_force = [(dist(query, point), point) for point in points]
     brute_force.sort()
 
