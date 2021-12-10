@@ -1,8 +1,7 @@
 """ This module contains an implementation of a Vantage Point-tree (VP-tree)."""
-from typing import Callable, List, Type
+from typing import Any, Callable, List, Type, Dict
 import numpy as np
 import copy
-
 
 class VPTree:
 
@@ -26,6 +25,7 @@ class VPTree:
 
     # tolerance fopr safe comparissons given numpy's float point rounding issue
     tolerance = 1e-6
+    seed = 1
 
     # Maximum difference allowed between two children nodes'cardinality.
     # It is ALWAYS larger than one! `max_diff >= 2`
@@ -37,6 +37,7 @@ class VPTree:
 
     # Function that computes the desired distance metric
     dist_fn = None
+    stored_distances = {}
 
     # Dictionary mapping a point id to the nodes in which it is a vp-point (int:VPTree)
     vp_id_to_node = {}
@@ -57,16 +58,37 @@ class VPTree:
 
         VPTree.dist_fn = distance_metric
         VPTree.points = {id:point for id,point in enumerate(point_list)}
+        
+        point_ids = {int(id):int(id) for id in range(len(point_list))}
+        
+        return VPTree(point_ids, None, int(0)), point_ids
 
-        return VPTree(list(range(len(point_list))), None)        
+
+    @staticmethod
+    def distance_by_id(id_1, id_2):
+
+        if (not isinstance(id_1, int)) or (not isinstance(id_2, int)):
+            raise ValueError('The point id must be an integer')
+
+        if not id_1 in VPTree.points:
+            raise ValueError('The point ids must exist. Tried id_1 = {}'.format(id_1))
+        
+        if not id_2 in VPTree.points:
+            raise ValueError('The point ids must exist. Tried id_2 = {}'.format(id_2))
+
+        if not (id_1, id_2) in VPTree.stored_distances:
+            VPTree.stored_distances[(id_1, id_2)] = VPTree.dist_fn(VPTree.points[id_1], VPTree.points[id_2])
+            VPTree.stored_distances[(id_2, id_1)] = VPTree.stored_distances[(id_1, id_2)]
+
+        return VPTree.stored_distances[(id_1, id_2)]
 
 
     # "Private" constructor used for recursion only. Use `construct_tree` instead!
-    def __init__(self, point_ids : List[int], parent):
+    def __init__(self, point_ids : Dict, parent, furtherest_id :int):
         
         ### FOR DEBUG:
         # self.tstamp = VPTree.timestamp
-        # VPTree.timestamp = VPTree.timestamp + 1
+        # VPTree.timestamp = VPTree.timestamp + 1        
         ###
 
         self.parent = parent
@@ -83,53 +105,99 @@ class VPTree:
             self.depth = 0
         else:
             self.depth = parent.depth + 1
+
+
+        self.node_point_ids = {}
         
         # Vantage point is point furthest from parent vp.
-        self.vp_id = point_ids[0]
+        # self.vp_id = point_ids[0]
+        # VPTree.vp_id_to_node[self.vp_id] = self
+        self.vp_id = int(furtherest_id)        
         VPTree.vp_id_to_node[self.vp_id] = self
 
         # self.node_point_ids = np.delete(point_ids, 0, axis=0)
-        self.node_point_ids = copy.deepcopy(point_ids[1:])
+        self.node_point_ids = copy.deepcopy(point_ids)
+        del self.node_point_ids[furtherest_id]
 
         if len(self.node_point_ids) is 0:
             return
 
         # Choose division boundary at median of distances.
-        distances = [VPTree.dist_fn(VPTree.points[self.vp_id], VPTree.points[p]) for p in self.node_point_ids]
+        # distances = [VPTree.dist_fn(VPTree.points[self.vp_id], VPTree.points[p]) for p in self.node_point_ids]
+        
+        # keys = list(self.node_point_ids.keys())
+        distances = [VPTree.distance_by_id(self.vp_id, int(p)) for p in list(self.node_point_ids.keys())]
         self.median = np.median(distances)
 
-        left_points = []
-        right_points = []
-        for point_id, distance in zip(self.node_point_ids, distances):
+        left_points = {}
+        vp_left = -1
+        right_points = {}
+        vp_right = -1
+        for point_id, distance in zip(list(self.node_point_ids.keys()), distances):
 
             if distance >= (self.median - VPTree.tolerance):
                 self.right_min = min(distance, self.right_min)
 
                 if distance > (self.right_max + VPTree.tolerance):
                     self.right_max = distance
-                    right_points.insert(0, point_id) # put furthest first
-                else:
-                    right_points.append(point_id)
-
+                    vp_right = int(point_id)
+                #     right_points.insert(0, point_id) # put furthest first
+                right_points[point_id] = point_id
+                # else:
+                    # right_points.append(point_id)
             else:
                 self.left_min = min(distance, self.left_min)
 
                 if distance > (self.left_max + VPTree.tolerance):
                     self.left_max = distance
-                    left_points.insert(0, point_id) # put furthest first
-                else:
-                    left_points.append(point_id)
+                    vp_left = int(point_id)
+                    # left_points.insert(0, point_id) # put furthest first
+                left_points[point_id] = point_id
+                # else:
+                    # left_points.append(point_id)        
 
         if len(left_points) > 0:
-            self.left = VPTree(left_points, self)
+            self.left = None
+            self.left = VPTree(left_points, self, vp_left)
 
         if len(right_points) > 0:
-            self.right = VPTree(right_points, self)
+            self.right = None
+            self.right = VPTree(right_points, self, vp_right)
 
 
     def _is_leaf(self):
         return (self.left is None) and (self.right is None)
 
+    # def dive(self):
+        
+    #     # print("VP {}".format(self.vp_id))
+    #     # print("right {}".format(self.right.node_point_ids))
+    #     # print("left {}".format(self.left.node_point_ids))
+    #     # print("---------------------------------------------------------------------------")
+        
+    #     print("vp: {}".format(self.vp_id))
+    #     print("list: {}".format(list(self.node_point_ids.keys())))            
+        
+
+    #     if self._is_leaf():
+    #         return
+    #     elif self.left:
+    #         print("-----------------------")
+    #         print("vp: {}".format(self.vp_id))
+    #         print("list: {}".format(list(self.node_point_ids.keys())))
+    #         print("vp in left: {}".format(self.left.vp_id))
+    #         print("left BEFORE {}".format(list(self.left.node_point_ids.keys())))
+    #         self.left.dive()
+    #         print("left AFTER {}".format(list(self.left.node_point_ids.keys())))
+    #     else:
+    #         print("-----------------------")
+    #         print("vp: {}".format(self.vp_id))
+    #         print("list: {}".format(list(self.node_point_ids.keys())))
+    #         print("vp in right: {}".format(self.right.vp_id))
+    #         print("right BEFORE {}".format(list(self.right.node_point_ids.keys())))
+    #         self.right.dive()
+    #         print("right AFTER {}".format(list(self.right.node_point_ids.keys())))
+    #     return
 
     def add_point(self, point):
         """ Adds a new point into the tree.
@@ -149,6 +217,9 @@ class VPTree:
 
         self.__traverse(new_point_id)
 
+        return new_point_id
+ 
+
     def __traverse(self, new_point_id):
         """ Traverses the tree and creates a new node for the added point
         
@@ -160,7 +231,7 @@ class VPTree:
 
         # If the current node is a leaf, update bounds and create a new node
         if self._is_leaf():
-            self.__init__([new_point_id, self.vp_id], self.parent)
+            self.__init__({new_point_id:new_point_id, self.vp_id:self.vp_id}, self.parent, self.vp_id)
             return
                         
         # Get number of points in the left node
@@ -176,28 +247,40 @@ class VPTree:
         #  If the subtree is too unbalanced (according to `VPTree.max_diff`), resconstruct it
         if abs(n_points_left - n_points_right) > VPTree.max_diff:
 
-            if self.parent is None:
-                all_node_ids = self.node_point_ids
-                all_node_ids.append(new_point_id)
-                all_node_ids.insert(0, self.vp_id)
-
-            else:
-                distance_vp = VPTree.dist_fn(VPTree.points[self.vp_id], VPTree.points[self.parent.vp_id])
-                distance_new_point = VPTree.dist_fn(VPTree.points[new_point_id], VPTree.points[self.parent.vp_id])
+            vp = copy.deepcopy(self.vp_id)
+            all_node_ids = copy.deepcopy(self.node_point_ids)
+            # if self.parent is None:
+                # all_node_ids = self.node_point_ids    
+                # all_node_ids.append(new_point_id)
+                # all_node_ids.insert(0, self.vp_id)                                
+            # else:
+            if not self.parent is None:
+                # distance_vp = VPTree.dist_fn(VPTree.points[self.vp_id], VPTree.points[self.parent.vp_id])
+                # distance_new_point = VPTree.dist_fn(VPTree.points[new_point_id], VPTree.points[self.parent.vp_id])
+                distance_vp = VPTree.distance_by_id(self.vp_id, self.parent.vp_id)
+                distance_new_point = VPTree.distance_by_id(new_point_id, self.parent.vp_id)
                 
-                all_node_ids = self.node_point_ids
+                # all_node_ids = self.node_point_ids
                 if(distance_new_point > (distance_vp + VPTree.tolerance)):
-                    all_node_ids.append(self.vp_id)
-                    all_node_ids.insert(0, new_point_id)
-                else:
-                    all_node_ids.append(new_point_id)
-                    all_node_ids.insert(0, self.vp_id)
+                    # all_node_ids.append(self.vp_id)
+                    # all_node_ids.insert(0, new_point_id)
+                    vp = new_point_id
+                # else:
+                #     all_node_ids.append(new_point_id)
+                #     all_node_ids.insert(0, self.vp_id)
+            
+            all_node_ids[new_point_id] = new_point_id
+            all_node_ids[self.vp_id] = self.vp_id
 
-            self.__init__(all_node_ids, self.parent)
+            self.__init__(all_node_ids, self.parent, vp)
+            
             return
 
-        # In this case, update the current node and keep traversing
-        distance = VPTree.dist_fn(VPTree.points[self.vp_id], VPTree.points[new_point_id])
+        # In this case, update the current node and keep traversing    
+        # distance = VPTree.dist_fn(VPTree.points[self.vp_id], VPTree.points[new_point_id])        
+        self.node_point_ids[new_point_id] = new_point_id
+        
+        distance = VPTree.distance_by_id(self.vp_id, new_point_id)
         if distance >= (self.median - VPTree.tolerance):
 
             if distance > (self.right_max + VPTree.tolerance):
@@ -208,9 +291,9 @@ class VPTree:
                                      
 
             if self.right is None:
-                self.right = VPTree([new_point_id], self)
+                self.right = VPTree({new_point_id:new_point_id}, self, new_point_id)
             else:
-                self.node_point_ids.append(new_point_id)
+                # self.node_point_ids.append(new_point_id)
                 self.right.__traverse(new_point_id)
 
         else:
@@ -222,11 +305,129 @@ class VPTree:
 
 
             if self.left is None:
-                self.left = VPTree([new_point_id], self)
+                self.left = VPTree({new_point_id:new_point_id}, self, new_point_id)
             else:
-                self.node_point_ids.append(new_point_id)
+                # self.node_point_ids.append(new_point_id)
                 self.left.__traverse(new_point_id)
         
+
+    def remove_point(self, point_id : int):
+        if point_id < 0 or point_id not in VPTree.points:
+            raise ValueError('The point id must be a positive integer and be in the tree')
+        
+        self.__traverse_and_remove(point_id)
+
+        del VPTree.points[point_id]
+        del VPTree.vp_id_to_node[point_id]
+
+    def __traverse_and_remove(self, point_id : int):
+
+        if self.vp_id == point_id:
+
+            if self._is_leaf():
+                return True #Flag that the point is in leaf
+
+            # when the point is found, find new vp-point and reconstruct the subtree
+            new_vp_id = -1
+            new_vp_distance = 0.0            
+            nodes_to_reconstruction = copy.deepcopy(self.node_point_ids)
+            
+            if self.parent == None:
+                new_vp_id = next(iter(nodes_to_reconstruction))
+
+            else:
+                for p in nodes_to_reconstruction:            
+                    dist = VPTree.distance_by_id(self.parent.vp_id, p)      
+                    if dist > (new_vp_distance + VPTree.tolerance):
+                        new_vp_distance = dist
+                        new_vp_id = p
+                               
+            self.__init__(nodes_to_reconstruction, self.parent, new_vp_id)        
+
+        else: #if `point_id` is not the VP point of this node
+
+            del self.node_point_ids[point_id]
+            distance = VPTree.distance_by_id(self.vp_id, point_id)            
+
+            if distance >= (self.median - VPTree.tolerance):
+
+                if abs(distance - self.right_max) < VPTree.tolerance:
+                    self.right_max = 0.0
+                    for p in list(self.right.node_point_ids.keys()):
+                        if p == point_id:
+                            continue
+
+                        dist = VPTree.distance_by_id(self.vp_id, p)
+                        if dist > (self.right_max + VPTree.tolerance):
+                            self.right_max = dist
+
+                    if self.right.vp_id != point_id:
+                        self.right_max = max(VPTree.distance_by_id(self.vp_id, self.right.vp_id), self.right_max)
+
+                if abs(distance - self.right_min) < VPTree.tolerance:
+                    self.right_min = np.inf                    
+                    for p in list(self.right.node_point_ids.keys()):
+                        if p == point_id:
+                            continue
+
+                        dist = VPTree.distance_by_id(self.vp_id, p)                    
+                        if dist < (self.right_min - VPTree.tolerance):
+                            self.right_min = dist
+                    
+                    if self.right.vp_id != point_id:
+                        self.right_min = min(VPTree.distance_by_id(self.vp_id, self.right.vp_id), self.right_min)
+
+                point_in_leaf = self.right.__traverse_and_remove(point_id)
+                if point_in_leaf:
+                    self.right = None
+                    self.right_min = np.inf
+                    self.right_max = 0.0
+
+            else:
+                if abs(distance - self.left_max) < VPTree.tolerance:                    
+                    self.left_max = 0.0                
+                    for p in list(self.left.node_point_ids.keys()):
+                        if p == point_id:
+                            continue
+
+                        dist = VPTree.distance_by_id(self.vp_id, p)                    
+                        if dist > (self.left_max + VPTree.tolerance):
+                            self.left_max = dist
+                    
+                    if self.left.vp_id != point_id:
+                        self.left_max = max(VPTree.distance_by_id(self.vp_id, self.left.vp_id), self.left_max)
+
+                if abs(distance - self.left_min) < VPTree.tolerance:
+                    self.left_min = np.inf
+                    if self.left.vp_id != point_id:
+                        self.left_min = VPTree.distance_by_id(self.vp_id, self.left.vp_id)
+
+                    for p in list(self.left.node_point_ids.keys()):
+                        if p == point_id:
+                            continue
+
+                        dist = VPTree.distance_by_id(self.vp_id, p)                    
+                        if dist < (self.left_min - VPTree.tolerance):
+                            self.left_min = dist
+                    
+                    if self.left.vp_id != point_id:
+                        self.left_min = min(VPTree.distance_by_id(self.vp_id, self.left.vp_id), self.left_min)
+
+                point_in_leaf = self.left.__traverse_and_remove(point_id)
+                if point_in_leaf:
+                    self.left = None
+                    self.left_min = np.inf
+                    self.left_max = 0.0
+    
+        return False
+
+
+    def updade_point(point_id : int):
+
+        # updade point in the Class dict
+        # recontruct the subtree
+        print("")
+
 
     def get_nearest_neighbor(self, query):
         """ Get single nearest neighbor.
@@ -301,6 +502,7 @@ class VPTree:
                                        else d - node.right_max))
 
         return list(neighbors)
+
 
     def get_all_in_range(self, query, max_distance):
         """ Find all neighbours within `max_distance`.
