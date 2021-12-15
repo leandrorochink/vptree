@@ -5,6 +5,7 @@ import unittest
 from numpy.lib.polynomial import polyint
 from vptree import VPTree
 import numpy as np
+import copy
 
 
 class TestVPTree(unittest.TestCase):
@@ -104,6 +105,35 @@ class TestVPTree(unittest.TestCase):
                                                             bf_nearest[1])))
 
 
+    def test_updating_points(self):
+        dim = 10
+        query = [.5] * dim
+        points, brute_force = brute_force_solution(10000, dim, query)
+        
+        # change last 2000 points:
+        original_points = copy.deepcopy(points[8000:])        
+        points[8000:] = 10 * points[8000:]
+
+        tree, ids = VPTree.construct_tree(points[:8000], euclidean)
+
+        ids_to_update = []
+        for point in points[8000:]:
+            ids_to_update.append(tree.add_point(point))
+        
+        # Update the last 2000 points to their original value
+        new_ids = []
+        for id, point in zip(ids_to_update, original_points):
+            new_ids.append(tree.update_point(id, point))
+
+        for k in (1, 10, len(points)):
+            tree_nearest = tree.get_n_nearest_neighbors(query, k)
+            brute_force_nearest = brute_force[:k]
+        
+            for nearest, bf_nearest in zip(tree_nearest, brute_force_nearest):
+                self.assertEqual(nearest[0], bf_nearest[0])
+                self.assertTrue(all(n == b for n, b in zip(nearest[1], bf_nearest[1])))
+
+
 def euclidean(p1, p2):
     return np.sqrt(np.sum(np.power(p2 - p1, 2)))
 
@@ -117,7 +147,7 @@ def brute_force_solution(n, dim, query, dist=euclidean):
     brute_force = [(dist(query, point), point) for point in points]
     brute_force.sort()
 
-    return points, brute_force
+    return points, copy.deepcopy(brute_force)
 
 
 if __name__ == '__main__':

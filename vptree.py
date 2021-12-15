@@ -26,6 +26,7 @@ class VPTree:
     # tolerance fopr safe comparissons given numpy's float point rounding issue
     tolerance = 1e-6
     seed = 1
+    next_id = int(0)
 
     # Maximum difference allowed between two children nodes'cardinality.
     # It is ALWAYS larger than one! `max_diff >= 2`
@@ -45,7 +46,13 @@ class VPTree:
 
     ### FOR DEBUG:
     # timestamp = 0
+    visited_nodes = 0
     ##
+
+    @classmethod
+    def __get_next_id(cls):        
+        VPTree.next_id = VPTree.next_id + int(1)
+        return VPTree.next_id - int(1)
 
     # "Public" constructor. Use this!
     @classmethod
@@ -56,13 +63,16 @@ class VPTree:
         if not distance_metric:
             raise ValueError('A distance metric is mandatory.')
 
-        VPTree.dist_fn = distance_metric
-        VPTree.points = {id:point for id,point in enumerate(point_list)}
-        
-        point_ids = {int(id):int(id) for id in range(len(point_list))}
-        
-        return VPTree(point_ids, None, int(0)), point_ids
+        point_ids = {}
+        for i in range(len(point_list)):
+            id = VPTree.__get_next_id()            
+            point_ids[id] = id
 
+        VPTree.dist_fn = distance_metric
+        VPTree.points = {id:point for id,point in zip(list(point_ids.keys()), point_list)}
+
+        initial_vp_id = next(iter(point_ids.keys()))
+        return VPTree(point_ids, None, initial_vp_id), point_ids
 
     @staticmethod
     def distance_by_id(id_1, id_2):
@@ -212,7 +222,7 @@ class VPTree:
         if not np.any(point):
             raise ValueError('Points can not be empty.')
 
-        new_point_id = len(VPTree.points)
+        new_point_id = VPTree.__get_next_id()
         VPTree.points[new_point_id] = point
 
         self.__traverse(new_point_id)
@@ -335,14 +345,25 @@ class VPTree:
             if self.parent == None:
                 new_vp_id = next(iter(nodes_to_reconstruction))
 
+                # print("VP in the ROOT")
+
             else:
-                for p in nodes_to_reconstruction:            
+                for p in iter(nodes_to_reconstruction.keys()):
                     dist = VPTree.distance_by_id(self.parent.vp_id, p)      
                     if dist > (new_vp_distance + VPTree.tolerance):
                         new_vp_distance = dist
                         new_vp_id = p
-                               
-            self.__init__(nodes_to_reconstruction, self.parent, new_vp_id)        
+
+                # print("VP in the INTERNAL node")
+            
+            # print(len(nodes_to_reconstruction))
+            # print(list(nodes_to_reconstruction.keys()))
+            # print("vp: {}".format(self.parent.vp_id))
+            # print("distance: {}".format(new_vp_distance))
+            # print("left: {}".format(self.left))
+            # print("right: {}".format(self.right))
+
+            self.__init__(nodes_to_reconstruction, self.parent, new_vp_id)     
 
         else: #if `point_id` is not the VP point of this node
 
@@ -422,11 +443,11 @@ class VPTree:
         return False
 
 
-    def updade_point(point_id : int):
-
-        # updade point in the Class dict
-        # recontruct the subtree
-        print("")
+    def update_point(self, point_id : int, new_point):
+                
+        self.remove_point(point_id)
+        return self.add_point(new_point)
+        
 
 
     def get_nearest_neighbor(self, query):
@@ -443,6 +464,128 @@ class VPTree:
             Single nearest neighbor.
         """
         return self.get_n_nearest_neighbors(query, n_neighbors=1)[0]
+
+
+    def get_n_nearest_neighbors_simple(self, query, n_neighbors):
+        """ Get `n_neighbors` nearest neigbors to `query`
+        
+        Parameters
+        ----------
+        query : Any
+            Query point.
+        n_neighbors : int
+            Number of neighbors to fetch.
+
+        Returns
+        -------
+        list
+            List of `n_neighbors` nearest neighbors.
+        """
+        if not isinstance(n_neighbors, int) or n_neighbors < 1:
+            raise ValueError('n_neighbors must be strictly positive integer')
+            
+        neighbors = _AutoSortingList(max_size=n_neighbors)
+        nodes_to_visit = [ self ]
+
+        nth_distance = np.inf
+
+        while len(nodes_to_visit) > 0:
+            node = nodes_to_visit.pop()            
+            
+            if node is None:
+                continue
+
+            VPTree.visited_nodes = VPTree.visited_nodes + 1 ####################### for debugging
+                        
+            dist = VPTree.dist_fn(query, VPTree.points[node.vp_id])
+            
+            if dist < (nth_distance - VPTree.tolerance):
+                neighbors.append((dist, VPTree.points[node.vp_id]))
+                
+                # Update the furtherst distance after having found at least `n_neighbors`
+                if len(neighbors) >= n_neighbors:
+                    nth_distance = neighbors[-1][0]
+
+            if node._is_leaf():
+                continue
+
+            if dist < node.median:
+                if dist < (node.median + nth_distance):
+                    nodes_to_visit.append(node.left)
+
+                if dist >= (node.median - nth_distance):
+                    nodes_to_visit.append(node.right)
+            else:
+                if dist >= (node.median - nth_distance):
+                    nodes_to_visit.append(node.right)
+
+                if dist < (node.median + nth_distance):
+                    nodes_to_visit.append(node.left)
+            
+        return list(neighbors)
+
+    def get_n_nearest_neighbors_original(self, query, n_neighbors):
+        """ Get `n_neighbors` nearest neigbors to `query`
+        
+        Parameters
+        ----------
+        query : Any
+            Query point.
+        n_neighbors : int
+            Number of neighbors to fetch.
+
+        Returns
+        -------
+        list
+            List of `n_neighbors` nearest neighbors.
+        """
+        if not isinstance(n_neighbors, int) or n_neighbors < 1:
+            raise ValueError('n_neighbors must be strictly positive integer')
+            
+        neighbors = _AutoSortingList(max_size=n_neighbors)
+        nodes_to_visit = [ self ]
+
+        nth_distance = np.inf
+
+        while len(nodes_to_visit) > 0:
+            node = nodes_to_visit.pop()            
+            
+            if node is None:
+                continue
+
+            VPTree.visited_nodes = VPTree.visited_nodes + 1 ####################### for debugging
+                        
+            dist = VPTree.dist_fn(query, VPTree.points[node.vp_id])
+            
+            if dist < (nth_distance - VPTree.tolerance):
+                neighbors.append((dist, VPTree.points[node.vp_id]))
+                
+                # Update the furtherst distance after having found at least `n_neighbors`
+                if len(neighbors) >= n_neighbors:
+                    nth_distance = neighbors[-1][0]
+
+            if node._is_leaf():
+                continue
+
+            middle = (node.left_max + node.right_min) / 2.0
+
+            if dist < middle:
+                if node.left_min - nth_distance <= dist <= node.left_min + nth_distance:
+                    nodes_to_visit.append(node.left)
+
+                if node.right_min - nth_distance <= dist <= node.right_max + nth_distance:
+                    nodes_to_visit.append(node.right)
+            else:
+                if node.right_min - nth_distance <= dist <= node.right_max + nth_distance:
+                    nodes_to_visit.append(node.right)
+                    
+                if node.left_min - nth_distance <= dist <= node.left_min + nth_distance:
+                    nodes_to_visit.append(node.left)                
+            
+        return list(neighbors)
+
+
+
 
     def get_n_nearest_neighbors(self, query, n_neighbors):
         """ Get `n_neighbors` nearest neigbors to `query`
@@ -468,6 +611,7 @@ class VPTree:
         furthest_d = np.inf
 
         while len(nodes_to_visit) > 0:
+            VPTree.visited_nodes = VPTree.visited_nodes + 1 ####################### for debugging
             node, d0 = nodes_to_visit.pop(0)
             if node is None or d0 > (furthest_d + VPTree.tolerance):
                 continue
@@ -483,6 +627,22 @@ class VPTree:
             if node._is_leaf():
                 continue
 
+            # if node.left_min <= d <= node.left_max:
+            #     nodes_to_visit.insert(0, (node.left, 0.0))
+
+            # elif node.left_min - furthest_d <= d <= node.left_max + furthest_d:
+            #     nodes_to_visit.append((node.left,
+            #                            node.left_min - d if d < node.left_min 
+            #                            else d - node.left_max))
+
+
+            # if node.right_min <= d <= node.right_max:
+            #     nodes_to_visit.insert(0, (node.right, 0.0))
+
+            # elif node.right_min - furthest_d <= d <= node.right_max + furthest_d:
+            #     nodes_to_visit.append((node.right,
+            #                            node.right_min - d if d < node.right_min
+            #                            else d - node.right_max))
 
             if (node.left_min - VPTree.tolerance) <= d <= (node.left_max + VPTree.tolerance):
                 nodes_to_visit.insert(0, (node.left, 0.0))
@@ -526,14 +686,14 @@ class VPTree:
         neighbors = list()
         nodes_to_visit = [(self, 0)]
 
-        while len(nodes_to_visit) > 0:
+        while len(nodes_to_visit) > 0:            
             node, d0 = nodes_to_visit.pop(0)
             if node is None or d0 > (max_distance + VPTree.tolerance):
                 continue
 
             d = VPTree.dist_fn(query, VPTree.points[node.vp_id])
             if d < (max_distance - VPTree.tolerance):
-                neighbors.append((d, VPTree.points[node.vp_id]))
+                neighbors.append((d, VPTree.points[node.vp_id]))                
 
             if node._is_leaf():
                 continue
