@@ -31,7 +31,7 @@ Example usage:
   query = [.5] * 10
   
   # Build tree in O(n log n) time complexity.
-  tree = vptree.VPTree(points, euclidean)   
+  tree, ids = VPTree.construct_tree(points, euclidean)
   
   # Query single point.
   tree.get_nearest_neighbor(query)
