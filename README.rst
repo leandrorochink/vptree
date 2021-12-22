@@ -33,6 +33,17 @@ Example usage:
   # Build tree in O(n log n) time complexity.
   tree, ids = VPTree.construct_tree(points, euclidean)
   
+  # Addind a new point into the vp-tree
+  new_point = [1.5] * 10
+  new_point_id = tree.add_point(new_point)
+
+  # Update a point in the vp-tree
+  updated_point = [- 1.5] * 10
+  updated_point_id = tree.update_point(new_point_id, updated_point)
+
+  # Removing a point from the vp-tree
+  tree.remove_point(updated_point_id):
+
   # Query single point.
   tree.get_nearest_neighbor(query)
   
