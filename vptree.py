@@ -1,5 +1,5 @@
 """ This module contains an implementation of a Vantage Point-tree (VP-tree)."""
-from typing import Any, Callable, List, Type, Dict
+from typing import Any, Callable, List, Type, Dict, Tuple
 import numpy as np
 import copy
 
@@ -57,7 +57,7 @@ class VPTree:
         -------
         Any
             A vantage point tree object
-        Dict [int:int]
+        Dict [int,int]
             A dictonary containing the Id of the points in the tree.
             The ids are set following the order in which they are added, i.e., the ordering in 'point_list'
         """
@@ -72,6 +72,7 @@ class VPTree:
             id = VPTree.__get_next_id()            
             point_ids[id] = id
 
+        VPTree.vp_id_to_node = {}
         VPTree.dist_fn = distance_metric
         VPTree.points = {id:point for id,point in zip(list(point_ids.keys()), point_list)}
 
@@ -100,10 +101,13 @@ class VPTree:
         if (not isinstance(id_1, int)) or (not isinstance(id_2, int)):
             raise ValueError('The point id must be an integer')
 
-        if not id_1 in VPTree.points:
+        # print("In tree::::")
+        # print("vp-tree:: ", list(VPTree.points.keys()), flush=True)
+
+        if id_1 not in VPTree.points:
             raise ValueError('The point ids must exist. Tried id_1 = {}'.format(id_1))
         
-        if not id_2 in VPTree.points:
+        if id_2 not in VPTree.points:
             raise ValueError('The point ids must exist. Tried id_2 = {}'.format(id_2))
 
         if not (id_1, id_2) in VPTree.stored_distances:
@@ -114,16 +118,16 @@ class VPTree:
 
 
     # "Private" constructor used for recursion only. Use `construct_tree` instead!
-    def __init__(self, point_ids : Dict, parent, furtherest_id :int):
+    def __init__(self, point_ids: Dict[int,int], parent: 'VPTree', furtherest_id: int):
         """ (Private) Constructor! Creates a VP-tree.
         
         Parameters
         ----------
-        point_ids : Dict[int:int]
+        point_ids : Dict[int,int]
             Dictionary of point ids.
         
-        parent : int
-            Point id of the parent node in the tree.
+        parent : 'VPTree'
+            Parent node in the tree.
             It is 'None' for the root node
         
         furtherest_id : int
@@ -448,8 +452,12 @@ class VPTree:
             Point id to be removed from the VP-tree.
         new_point : List[float]
             The updated point.
-        """    
+        """
+        # print("In tree:::: update before")
+        # print("vp-tree:: ", list(VPTree.points.keys()), flush=True)
         self.remove_point(point_id)
+        # print("In tree:::: update after")
+        # print("vp-tree:: ", list(VPTree.points.keys()), flush=True)
         return self.add_point(new_point)
         
 
@@ -463,8 +471,8 @@ class VPTree:
 
         Returns
         -------
-        Tuple[float, List[float]]
-            Single nearest neighbor.
+        Tuple[float, List[float], int]
+            Single nearest neighbor. (distance, point, vp_tree_id)
         """
         return self.get_n_nearest_neighbors(query, n_neighbors=1)[0]
 
@@ -501,7 +509,7 @@ class VPTree:
             dist = VPTree.dist_fn(query, VPTree.points[node.vp_id])
             
             if dist < (nth_distance - VPTree.tolerance):
-                neighbors.append((dist, VPTree.points[node.vp_id]))
+                neighbors.append((dist, VPTree.points[node.vp_id], node.vp_id))
                 
                 # Update the furtherst distance after having found at least `n_neighbors`
                 if len(neighbors) >= n_neighbors:
@@ -538,8 +546,8 @@ class VPTree:
 
         Returns
         -------
-        List[Tuple[float, List[float]]]
-            List of `n_neighbors` nearest neighbors: distances and points.
+        List[Tuple[float, List[float], int]]
+            List of `n_neighbors` nearest neighbors: distances, points, and vp-tree ids.
         """
         if not isinstance(n_neighbors, int) or n_neighbors < 1:
             raise ValueError('n_neighbors must be strictly positive integer')
@@ -558,7 +566,7 @@ class VPTree:
             dist = VPTree.dist_fn(query, VPTree.points[node.vp_id])
             
             if dist < (nth_distance - VPTree.tolerance):
-                neighbors.append((dist, VPTree.points[node.vp_id]))
+                neighbors.append((dist, VPTree.points[node.vp_id], node.vp_id))
                 
                 # Update the furtherst distance after having found at least `n_neighbors`
                 if len(neighbors) >= n_neighbors:
@@ -585,7 +593,7 @@ class VPTree:
         return list(neighbors)
 
 
-    def get_n_nearest_neighbors(self, query, n_neighbors):
+    def get_n_nearest_neighbors(self, query, n_neighbors) -> List[Tuple[float, List[float], int]]:
         """ Get `n_neighbors` nearest neigbors to `query`
         
         Parameters
@@ -597,8 +605,7 @@ class VPTree:
 
         Returns
         -------
-        List[Tuple[float, List[float]]]
-            List of `n_neighbors` nearest neighbors: distances and points.
+            List of `n_neighbors` nearest neighbors: distances, points, and vp-tree ids : List[Tuple[float, List[float], int]]
         """
         if not isinstance(n_neighbors, int) or n_neighbors < 1:
             raise ValueError('n_neighbors must be strictly positive integer')
@@ -615,11 +622,11 @@ class VPTree:
             
             d = VPTree.dist_fn(query, VPTree.points[node.vp_id])
             if d < (furthest_d - VPTree.tolerance):
-                neighbors.append((d, VPTree.points[node.vp_id]))
+                neighbors.append((d, VPTree.points[node.vp_id], node.vp_id))
                 
                 # Update the furtherst distance after having found at least `n_neighbors`
                 if len(neighbors) >= n_neighbors:
-                    furthest_d, _ = neighbors[-1]
+                    furthest_d, _, _ = neighbors[-1]
 
             if node._is_leaf():
                 continue
@@ -656,8 +663,8 @@ class VPTree:
 
         Returns
         -------
-        neighbors : list
-            List of distances and points within `max_distance`.
+        neighbors : List[Tuple[float, List[float], int]]
+            List of distances, points, and vp-tree ids within `max_distance`.
 
         Notes
         -----
@@ -673,7 +680,7 @@ class VPTree:
 
             d = VPTree.dist_fn(query, VPTree.points[node.vp_id])
             if d < (max_distance - VPTree.tolerance):
-                neighbors.append((d, VPTree.points[node.vp_id]))                
+                neighbors.append((d, VPTree.points[node.vp_id], node.vp_id))                
 
             if node._is_leaf():
                 continue
